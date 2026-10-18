@@ -59,3 +59,13 @@ def test_answer_cache_roundtrip(conn):
     from wordle_bot.db import cached_answers, store_answer
     store_answer(conn, 1936, "PROVE")
     assert cached_answers(conn, [1936, 1937]) == {1936: "PROVE"}
+
+
+def test_day_results_and_summary_days(conn, summary_lines):
+    from wordle_bot.db import day_results, summary_days
+    upsert_results(conn, G, 1942, summary_lines, channel_id=10, message_id=20)
+    entries = dict(day_results(conn, G, 1942))
+    assert len(entries) == 4
+    assert entries[444].guesses is None
+    assert summary_days(conn, G) == {1942}
+    assert day_results(conn, G, 1943) == []

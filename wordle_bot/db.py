@@ -114,3 +114,16 @@ def cached_answers(conn, nos: list[int]) -> dict[int, str]:
 def store_answer(conn, wordle_no: int, word: str) -> None:
     conn.execute("INSERT OR REPLACE INTO answers VALUES (?, ?)", (wordle_no, word))
     conn.commit()
+
+
+def summary_days(conn, guild_id: int) -> set[int]:
+    return {n for (n,) in conn.execute(
+        "SELECT DISTINCT wordle_no FROM results WHERE guild_id = ?", (guild_id,))}
+
+
+def day_results(conn, guild_id: int, wordle_no: int) -> list[tuple[int, Result]]:
+    cur = conn.execute(
+        "SELECT user_id, guesses, crown FROM results WHERE guild_id = ? AND wordle_no = ?",
+        (guild_id, wordle_no),
+    )
+    return [(uid, Result(wordle_no, g, bool(c))) for uid, g, c in cur]

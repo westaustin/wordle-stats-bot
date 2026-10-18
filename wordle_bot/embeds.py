@@ -1,6 +1,9 @@
 import discord
 
 from wordle_bot import config
+from wordle_bot.answers import UNKNOWN_WORD, date_for
+from wordle_bot.db import Result
+from wordle_bot.history import HistoryRow
 from wordle_bot.stats import DIST_KEYS, UserStats
 
 GREEN = 0x6AAA64
@@ -50,4 +53,41 @@ def leaderboard_embed(rows: list[tuple[str, UserStats]]) -> discord.Embed:
         table.append(f"{rank:<3}{name[:15]:<16}{s.avg:>5.2f}{s.played:>7}"
                      f"{s.crowns:>4}{s.current_streak:>7}")
     e.description = "```\n" + "\n".join(table) + "\n```"
+    return e
+
+
+def _short_date(wordle_no: int) -> str:
+    d = date_for(wordle_no)
+    return f"{d:%b} {d.day}"
+
+
+def format_score(r: Result) -> str:
+    score = "X/6" if r.guesses is None else f"{r.guesses}/6"
+    return f"{score} 👑" if r.crown else score
+
+
+def history_embed(name: str, rows: list[HistoryRow], words: dict[int, str | None],
+                  page: int, pages: int) -> discord.Embed:
+    e = discord.Embed(title=f"📜 {name} — Recent Wordles", color=GREEN)
+    if not rows:
+        e.description = "No Wordle results yet."
+        return e
+    lines = []
+    for row in rows:
+        word = words.get(row.wordle_no) or UNKNOWN_WORD
+        score = format_score(row.result) if row.result else "didn't play"
+        lines.append(f"#{row.wordle_no} · {_short_date(row.wordle_no)} · {word} · {score}")
+    e.description = "\n".join(lines)
+    e.set_footer(text=f"Page {page + 1} / {pages}")
+    return e
+
+
+def day_embed(wordle_no: int, word: str | None, entries: list[tuple[str, Result]]) -> discord.Embed:
+    e = discord.Embed(title=f"Wordle #{wordle_no} · {_short_date(wordle_no)} · {word or UNKNOWN_WORD}",
+                      color=GREEN)
+    if not entries:
+        e.description = "No results recorded for this day."
+        return e
+    ranked = sorted(entries, key=lambda e: (e[1].guesses is None, e[1].guesses or 0, e[0].lower()))
+    e.description = "\n".join(f"{format_score(r)} {name}" for name, r in ranked)
     return e

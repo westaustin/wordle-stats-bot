@@ -37,3 +37,24 @@ def test_leaderboard_embed_medals():
     d = e.description
     assert d.index("🥇") < d.index("🥈") < d.index("🥉")
     assert leaderboard_embed([]).description == "No one has 20 games yet."
+
+
+def test_history_embed_row_format():
+    from wordle_bot.embeds import history_embed
+    from wordle_bot.history import HistoryRow
+    rows = [HistoryRow(1946, Result(1946, 4, True)), HistoryRow(1943, None)]
+    e = history_embed("OnlyTees", rows, {1946: "CRANE", 1943: None}, page=0, pages=3)
+    assert "#1946 · Oct 17 · CRANE · 4/6 👑" in e.description
+    assert "#1943 · Oct 14 · ????? · didn't play" in e.description
+    assert e.footer.text == "Page 1 / 3"
+
+
+def test_day_embed_order_and_title():
+    from wordle_bot.embeds import day_embed
+    e = day_embed(1936, "PROVE", [("a", Result(1936, 6, False)), ("b", Result(1936, 4, True)),
+                                  ("c", Result(1936, None, False))])
+    assert e.title == "Wordle #1936 · Oct 7 · PROVE"
+    lines = e.description.splitlines()
+    assert [l.split()[-1] for l in lines] == ["b", "a", "c"]
+    assert "👑" in lines[0]
+    assert day_embed(1936, None, []).description == "No results recorded for this day."
