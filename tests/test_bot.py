@@ -78,3 +78,22 @@ def test_catch_up_point_requires_completed_backfill(conn, summary_lines):
 def test_history_command_takes_user():
     assert botmod.history_cmd.clean_params["member"].annotation is discord.User
     assert "day" in [c.name for c in botmod.bot.commands]
+
+
+def test_setup_logging_writes_utf8_file(tmp_path):
+    import logging
+    from wordle_bot.bot import setup_logging
+    path = tmp_path / "bot.log"
+    root = logging.getLogger()
+    before = list(root.handlers)
+    try:
+        setup_logging(str(path))
+        logging.getLogger("wordle_bot.test").warning("👑 4/6: <@1>")
+        for h in root.handlers:
+            h.flush()
+        assert "👑 4/6" in path.read_text(encoding="utf-8")
+    finally:
+        for h in root.handlers[:]:
+            if h not in before:
+                root.removeHandler(h)
+                h.close()

@@ -49,6 +49,45 @@ cleanly, later restarts only catch up from where it left off; if any channel err
 start does a full pass again. `!rescan` forces a full pass anytime. For an always-on server, see `deploy/wordle-bot.service`
 (copy to `/etc/systemd/system/`, adjust paths, then `systemctl enable --now wordle-bot`).
 
+## Running on Windows
+
+Needs Python 3.11+ from python.org (tick "Add python.exe to PATH"). Put the project somewhere
+permanent, e.g. `C:\wordle-bot`, then in that folder:
+
+```powershell
+py -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+copy .env.example .env
+```
+
+Edit `.env`: set `DISCORD_TOKEN`, and set `WORDLE_LOG_FILE=bot.log` so you can see what the bot
+is doing while it runs in the background. Then check it works in the foreground first:
+
+```powershell
+.venv\Scripts\python -m scripts.probe
+.venv\Scripts\python -m wordle_bot
+```
+
+Stop it with Ctrl+C once `!wordle` answers in Discord.
+
+**Run it in the background, starting at boot (no login needed).** In PowerShell opened with
+*Run as administrator*:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\windows\install-task.ps1
+```
+
+It asks for your Windows password. That's your account password, not your PIN; Task Scheduler
+needs it to run the bot while nobody is logged in. The task waits a minute after boot for the
+network, then runs `deploy\windows\run-bot.cmd`, which restarts the bot 30 seconds after it
+ever exits.
+
+- **Is it running?** Look at `bot.log`, or Task Scheduler → *Wordle Bot* → Status "Running".
+- **Stop / remove:** `powershell -ExecutionPolicy Bypass -File deploy\windows\stop-bot.ps1`
+  (add `-Uninstall` to stop it starting at boot).
+- **After changing `.env` or updating the code:** stop it, then `Start-ScheduledTask -TaskName "Wordle Bot"`.
+- **Keep the PC awake:** Settings → System → Power → Sleep → *Never* while plugged in.
+
 ## Tests
 
 ```bash

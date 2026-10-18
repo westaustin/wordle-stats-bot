@@ -1,4 +1,5 @@
 import logging
+from logging.handlers import RotatingFileHandler
 
 import aiohttp
 import discord
@@ -194,8 +195,17 @@ async def on_command_error(ctx: commands.Context, error: commands.CommandError):
         log.error("Command %s failed", ctx.command, exc_info=error)
 
 
+def setup_logging(log_file: str | None) -> None:
+    """Log to the console, and also to a rotating UTF-8 file when `log_file` is set."""
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    if log_file:
+        handlers.append(RotatingFileHandler(log_file, maxBytes=1_000_000, backupCount=3, encoding="utf-8"))
+    logging.basicConfig(level=logging.INFO, handlers=handlers, force=True,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
 def main():
     global conn
-    logging.basicConfig(level=logging.INFO)
+    setup_logging(config.LOG_FILE)
     conn = connect(config.DB_PATH)
     bot.run(config.DISCORD_TOKEN, log_handler=None)
