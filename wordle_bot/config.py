@@ -13,7 +13,6 @@ FAIL_SCORE = 7
 SUMMARY_MARKER = "Here are yesterday's results"
 ANSWER_URL = "https://www.nytimes.com/svc/wordle/v2/{date}.json"
 HISTORY_PAGE_SIZE = 10
-VIEW_TIMEOUT = 300  # seconds before paging buttons stop working
 
 DB_PATH = os.getenv("WORDLE_DB_PATH", "wordle.db")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")

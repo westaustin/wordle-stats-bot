@@ -68,6 +68,19 @@ def test_backfill_error_leaves_full_rescan_pending(conn):
     assert catch_up_point(conn, 5) is None  # next start does a full pass again
 
 
+def test_backfill_logs_start_and_per_channel_progress(conn, caplog, monkeypatch):
+    monkeypatch.setattr(botmod, "PROGRESS_EVERY", 2)
+    noise = SimpleNamespace(author=SimpleNamespace(id=2, bot=False), content="hi", guild=SimpleNamespace(id=5))
+    guild = fake_guild(FakeChannel("general", [noise, noise, _msg(100)]), FakeChannel("voice-chat", fail=True))
+    with caplog.at_level("INFO", logger="wordle_bot.bot"):
+        asyncio.run(backfill(conn, guild))
+    lines = [r.getMessage() for r in caplog.records]
+    assert "Backfill for g started (full scan, 2 channels)" in lines
+    assert "  #general: 2 messages read so far, 0 summaries" in lines
+    assert "  [1/2] #general: 3 messages, 1 summaries" in lines
+    assert "  [2/2] #voice-chat: 0 messages, 0 summaries" in lines
+
+
 def test_catch_up_point_requires_completed_backfill(conn, summary_lines):
     upsert_results(conn, 5, 1946, summary_lines, channel_id=10, message_id=900)
     assert catch_up_point(conn, 5) is None

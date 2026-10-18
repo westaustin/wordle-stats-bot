@@ -1,15 +1,15 @@
-import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
 import discord
 
-from wordle_bot import config
-
 log = logging.getLogger(__name__)
 
-Render = Callable[[int], Awaitable[discord.Embed]]
-Target = int | Callable[[], int]
+# (interaction, owner id, subject, position) -> the message's new embed and buttons. Registered by
+# bot.py: "h" pages a user's history (subject = user id, position = page), "d" moves between
+# days (subject unused, position = Wordle #).
+Handler = Callable[[discord.Interaction, int, int, int], Awaitable[tuple[discord.Embed, discord.ui.View | None]]]
+HANDLERS: dict[str, Handler] = {}
 
 
 def pager_states(page: int, pages: int) -> tuple[bool, bool, bool, bool]:
@@ -18,14 +18,27 @@ def pager_states(page: int, pages: int) -> tuple[bool, bool, bool, bool]:
     return at_start, at_start, at_end, at_end
 
 
-class OwnedView(discord.ui.View):
-    """Buttons only the person who ran the command can press."""
+class PagerButton(discord.ui.DynamicItem[discord.ui.Button],
+                  template=r"pg:(?P<kind>[hd]):(?P<slot>\d):(?P<owner>\d+):(?P<subject>\d+):(?P<pos>\d+)"):
+    """A paging button that carries its destination in its custom id.
 
-    def __init__(self, owner_id: int):
-        super().__init__(timeout=config.VIEW_TIMEOUT)
-        self.owner_id = owner_id
-        self.message: discord.Message | None = None
-        self._lock = asyncio.Lock()
+    Nothing is held in memory, so buttons keep working after any amount of time and across
+    restarts. Each press goes to the page the button showed when it was drawn, so a double-tap
+    lands on the same page twice, and every edit sends an embed with its matching buttons.
+    """
+
+    def __init__(self, kind: str, slot: int, owner_id: int, subject: int, position: int,
+                 label: str | None = None, disabled: bool = False):
+        position = max(position, 0)
+        super().__init__(discord.ui.Button(
+            label=label, style=discord.ButtonStyle.secondary, disabled=disabled,
+            custom_id=f"pg:{kind}:{slot}:{owner_id}:{subject}:{position}"))
+        self.kind, self.owner_id, self.subject, self.position = kind, owner_id, subject, position
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(match["kind"], int(match["slot"]), int(match["owner"]), int(match["subject"]),
+                   int(match["pos"]))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id == self.owner_id:
@@ -33,103 +46,28 @@ class OwnedView(discord.ui.View):
         await interaction.response.send_message("Run the command yourself to browse.", ephemeral=True)
         return False
 
-    async def on_timeout(self):
-        for child in self.children:
-            child.disabled = True
-        if self.message:
-            try:
-                await self.message.edit(view=self)
-            except discord.HTTPException:
-                pass
-
-    async def _navigate(self, interaction: discord.Interaction, target: Target):
-        """Move to `target` (a position, or a function of the current one).
-
-        Presses run one at a time, so a double-tap moves two steps and the message always matches
-        the buttons. State only changes once the interaction is acknowledged.
-        """
-        async with self._lock:
-            try:
-                # Defer first: rendering may fetch up to a page of answers, longer than Discord's 3s window.
-                await interaction.response.defer()
-            except discord.HTTPException as e:
-                log.warning("Couldn't acknowledge button press: %s", e)
-                return
-            position = self._clamp(target() if callable(target) else target)
-            embed = await self.render(position)
-            self._set_position(position)
-            await interaction.edit_original_response(embed=embed, view=self)
-
-    def _clamp(self, position: int) -> int:
-        raise NotImplementedError
-
-    def _set_position(self, position: int) -> None:
-        raise NotImplementedError
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            # Defer first: rendering may fetch up to a page of answers, longer than Discord's 3s window.
+            await interaction.response.defer()
+        except discord.HTTPException as e:
+            log.warning("Couldn't acknowledge button press: %s", e)
+            return
+        embed, view = await HANDLERS[self.kind](interaction, self.owner_id, self.subject, self.position)
+        await interaction.edit_original_response(embed=embed, view=view)
 
 
-class HistoryView(OwnedView):
-    def __init__(self, owner_id: int, pages: int, render: Render):
-        super().__init__(owner_id)
-        self.pages, self.render, self.page = pages, render, 0
-        self._buttons = []
-        for label, target in [("⏮", 0), ("◀", lambda: self.page - 1),
-                              ("▶", lambda: self.page + 1), ("⏭", lambda: self.pages - 1)]:
-            button = discord.ui.Button(label=label, style=discord.ButtonStyle.secondary)
-            button.callback = self._make_callback(target)
-            self.add_item(button)
-            self._buttons.append(button)
-        self._refresh()
-
-    def _make_callback(self, target: Target):
-        async def callback(interaction: discord.Interaction):
-            await self.go_to(interaction, target)
-        return callback
-
-    def _refresh(self):
-        for button, disabled in zip(self._buttons, pager_states(self.page, self.pages)):
-            button.disabled = disabled
-
-    def _clamp(self, page: int) -> int:
-        return max(0, min(page, self.pages - 1))
-
-    def _set_position(self, page: int) -> None:
-        self.page = page
-        self._refresh()
-
-    async def go_to(self, interaction: discord.Interaction, page: Target):
-        await self._navigate(interaction, page)
+def history_view(owner_id: int, user_id: int, page: int, pages: int) -> discord.ui.View:
+    view = discord.ui.View(timeout=None)
+    targets = [0, page - 1, page + 1, pages - 1]
+    for slot, (label, target, disabled) in enumerate(zip("⏮◀▶⏭", targets, pager_states(page, pages))):
+        view.add_item(PagerButton("h", slot, owner_id, user_id, target, label, disabled))
+    return view
 
 
-class DayView(OwnedView):
-    def __init__(self, owner_id: int, wordle_no: int, latest_no: int, render: Render):
-        super().__init__(owner_id)
-        self.wordle_no, self.latest_no, self.render = wordle_no, latest_no, render
-        self.prev_button = discord.ui.Button(style=discord.ButtonStyle.secondary)
-        self.next_button = discord.ui.Button(style=discord.ButtonStyle.secondary)
-        self.prev_button.callback = self._make_callback(-1)
-        self.next_button.callback = self._make_callback(+1)
-        self.add_item(self.prev_button)
-        self.add_item(self.next_button)
-        self._refresh()
-
-    def _make_callback(self, step: int):
-        async def callback(interaction: discord.Interaction):
-            await self.go_to(interaction, lambda: self.wordle_no + step)
-        return callback
-
-    def _refresh(self):
-        n = self.wordle_no
-        self.prev_button.label = f"◀ #{n - 1}"
-        self.next_button.label = f"#{n + 1} ▶"
-        self.prev_button.disabled = n <= 0
-        self.next_button.disabled = n + 1 > self.latest_no
-
-    def _clamp(self, wordle_no: int) -> int:
-        return max(0, min(wordle_no, self.latest_no))
-
-    def _set_position(self, wordle_no: int) -> None:
-        self.wordle_no = wordle_no
-        self._refresh()
-
-    async def go_to(self, interaction: discord.Interaction, wordle_no: Target):
-        await self._navigate(interaction, wordle_no)
+def day_view(owner_id: int, wordle_no: int, latest_no: int) -> discord.ui.View:
+    view = discord.ui.View(timeout=None)
+    view.add_item(PagerButton("d", 0, owner_id, 0, wordle_no - 1, f"◀ #{wordle_no - 1}", wordle_no <= 0))
+    view.add_item(PagerButton("d", 1, owner_id, 0, wordle_no + 1, f"#{wordle_no + 1} ▶",
+                              wordle_no + 1 > latest_no))
+    return view

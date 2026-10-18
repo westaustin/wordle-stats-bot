@@ -36,3 +36,11 @@ def test_wordle_number_known_day():
 def test_wordle_number_uses_eastern_time():
     # 03:30 UTC on 10-18 is 23:30 ET on 10-17, so "yesterday" is 10-16
     assert wordle_number_for(datetime(2026, 10, 18, 3, 30, tzinfo=timezone.utc)) == 1945
+
+
+def test_parse_plain_text_names():
+    s = parse_summary("Here are yesterday's results:\n👑 3/6: @OnlyTees\n"
+                      "4/6: @snowMAMA @That Good Kwat @Slicck\n5/6: <@111> @Bob")
+    assert [(l.guesses, l.user_ids, l.names) for l in s.lines] == [
+        (3, [], ["OnlyTees"]), (4, [], ["snowMAMA", "That Good Kwat", "Slicck"]), (5, [111], ["Bob"])]
+    assert s.skipped == []
