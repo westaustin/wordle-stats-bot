@@ -14,7 +14,10 @@ CREATE TABLE IF NOT EXISTS results (
     channel_id INTEGER NOT NULL,
     message_id INTEGER NOT NULL,
     PRIMARY KEY (guild_id, wordle_no, user_id)
-)
+);
+CREATE TABLE IF NOT EXISTS backfill_state (
+    guild_id INTEGER PRIMARY KEY  -- present = a full history pass finished cleanly
+);
 """
 
 
@@ -27,7 +30,7 @@ class Result:
 
 def connect(path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
-    conn.execute(SCHEMA)
+    conn.executescript(SCHEMA)
     conn.commit()
     return conn
 
@@ -84,3 +87,14 @@ def latest_message_id(conn, guild_id: int) -> int | None:
     return conn.execute(
         "SELECT MAX(message_id) FROM results WHERE guild_id = ?", (guild_id,)
     ).fetchone()[0]
+
+
+def mark_backfill_complete(conn, guild_id: int) -> None:
+    conn.execute("INSERT OR IGNORE INTO backfill_state VALUES (?)", (guild_id,))
+    conn.commit()
+
+
+def backfill_complete(conn, guild_id: int) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM backfill_state WHERE guild_id = ?", (guild_id,)
+    ).fetchone() is not None

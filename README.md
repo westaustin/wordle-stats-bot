@@ -33,7 +33,7 @@ cp .env.example .env   # then paste DISCORD_TOKEN
 ```
 
 This prints recent summaries with the author id and a computed Wordle #. Put the author id
-in `.env` as `WORDLE_AUTHOR_ID`, and open one image link to confirm "Wordle No." matches the
+in `.env` as `WORDLE_AUTHOR_ID` (until it's set, only bot/app-authored summaries are trusted), and open one image link to confirm "Wordle No." matches the
 computed number.
 
 ## 4. Run
@@ -42,8 +42,9 @@ computed number.
 .venv/bin/python -m wordle_bot
 ```
 
-On first start it reads all channel history (can take a few minutes); after that it catches up
-from where it left off on each restart. For an always-on server, see `deploy/wordle-bot.service`
+On first start it reads all channel history (can take a few minutes). Once a full pass finishes
+cleanly, later restarts only catch up from where it left off; if any channel errored, the next
+start does a full pass again. `!rescan` forces a full pass anytime. For an always-on server, see `deploy/wordle-bot.service`
 (copy to `/etc/systemd/system/`, adjust paths, then `systemctl enable --now wordle-bot`).
 
 ## Tests

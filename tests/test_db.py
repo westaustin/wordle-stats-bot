@@ -44,3 +44,12 @@ def test_latest_message_id(conn, summary_lines):
     upsert_results(conn, G, 1940, summary_lines, channel_id=10, message_id=500)
     upsert_results(conn, G, 1941, summary_lines, channel_id=10, message_id=900)
     assert latest_message_id(conn, G) == 900
+
+
+def test_backfill_complete_marker(conn):
+    from wordle_bot.db import backfill_complete, mark_backfill_complete
+    assert not backfill_complete(conn, G)
+    mark_backfill_complete(conn, G)
+    mark_backfill_complete(conn, G)
+    assert backfill_complete(conn, G)
+    assert not backfill_complete(conn, 2)
