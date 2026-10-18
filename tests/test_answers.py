@@ -44,3 +44,10 @@ def test_get_answers_never_fetches_past_cutoff(conn):
     fetch2 = FakeFetch("x")
     assert run(get_answers(conn, [1900], None, fetch2)) == {1900: None}
     assert fetch2.calls == []
+
+
+def test_stops_fetching_after_first_failure(conn):
+    fetch = FakeFetch(None, "crane", "ghost")
+    out = run(get_answers(conn, [1946, 1945, 1944], 1946, fetch))
+    assert out == {1946: None, 1945: None, 1944: None}
+    assert len(fetch.calls) == 1  # a down/blackholed NYT costs one timeout, not ten

@@ -71,3 +71,49 @@ def test_day_view_bounds():
     assert next1.disabled and not prev1.disabled
     assert prev1.label == "◀ #1945"
     assert v2.children[0].disabled
+
+
+def _owner_interaction(resp):
+    return SimpleNamespace(user=SimpleNamespace(id=1), response=resp,
+                           edit_original_response=resp.edit_original_response)
+
+
+def test_double_press_next_lands_on_page_two_in_sync():
+    async def slow_render(page):
+        await asyncio.sleep(0.05 if page == 1 else 0.0)  # first press is the slow one
+        return page
+
+    async def go():
+        view = HistoryView(owner_id=1, pages=5, render=slow_render)
+        resp = Recorder()
+        next_button = view.children[2]
+        await asyncio.gather(next_button.callback(_owner_interaction(resp)),
+                             next_button.callback(_owner_interaction(resp)))
+        return view, resp.calls
+    view, calls = asyncio.run(go())
+    shown = [kw["embed"] for name, _, kw in calls if name == "edit_original_response"]
+    assert shown == [1, 2]
+    assert view.page == 2
+    assert [b.disabled for b in view.children] == [False, False, False, False]
+
+
+def test_failed_defer_leaves_page_unchanged():
+    import discord
+    rendered = []
+
+    async def render(page):
+        rendered.append(page)
+        return page
+
+    class FailingDefer(Recorder):
+        async def defer(self, *args, **kwargs):
+            raise discord.HTTPException(SimpleNamespace(status=404, reason="Not Found"), "Unknown interaction")
+
+    async def go():
+        view = HistoryView(owner_id=1, pages=3, render=render)
+        await view.go_to(_owner_interaction(FailingDefer()), 2)
+        return view
+    view = asyncio.run(go())
+    assert view.page == 0
+    assert rendered == []
+    assert [b.disabled for b in view.children] == [True, True, False, False]

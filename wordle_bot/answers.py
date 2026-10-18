@@ -42,7 +42,8 @@ async def get_answers(conn, nos: list[int], latest_no: int | None, fetch: Fetche
     for n in safe:
         if found[n] is None:
             word = await fetch(date_for(n))
-            if word:
-                found[n] = word.upper()
-                store_answer(conn, n, found[n])
+            if not word:
+                break  # NYT is failing; don't wait on a timeout for every remaining row
+            found[n] = word.upper()
+            store_answer(conn, n, found[n])
     return found
