@@ -5,6 +5,8 @@ Tracks each member's daily Wordle result from the Wordle Activity's daily summar
 
 - `!wordle` — your stats
 - `!wordle @someone` — their stats
+- `!history` / `!history @someone` — recent days with the answer word, paged with buttons
+- `!day 1936` / `!day oct 7` / `!day yesterday` — everyone's scores and the word for one day
 - `!leaderboard` — server ranking by average guesses (min 20 games)
 - `!rescan` — re-read all channel history (needs Manage Server)
 

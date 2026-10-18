@@ -73,3 +73,8 @@ def test_catch_up_point_requires_completed_backfill(conn, summary_lines):
     assert catch_up_point(conn, 5) is None
     mark_backfill_complete(conn, 5)
     assert catch_up_point(conn, 5) == 900
+
+
+def test_history_command_takes_user():
+    assert botmod.history_cmd.clean_params["member"].annotation is discord.User
+    assert "day" in [c.name for c in botmod.bot.commands]

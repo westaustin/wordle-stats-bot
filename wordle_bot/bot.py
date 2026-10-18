@@ -1,14 +1,19 @@
 import logging
 
+import aiohttp
 import discord
 from discord.ext import commands
 
 from wordle_bot import config
-from wordle_bot.db import (backfill_complete, connect, guild_results, latest_message_id, latest_wordle_no,
-                           mark_backfill_complete, user_results)
-from wordle_bot.embeds import leaderboard_embed, stats_embed
+from wordle_bot.answers import get_answers, make_fetcher
+from wordle_bot.dateparse import DAY_HELP, parse_day, today_et
+from wordle_bot.db import (backfill_complete, connect, day_results, guild_results, latest_message_id,
+                           latest_wordle_no, mark_backfill_complete, summary_days, user_results)
+from wordle_bot.embeds import day_embed, history_embed, leaderboard_embed, stats_embed
+from wordle_bot.history import history_rows, page_count, paginate
 from wordle_bot.ingest import ingest_message
 from wordle_bot.stats import compute_stats, leaderboard
+from wordle_bot.views import DayView, HistoryView
 
 log = logging.getLogger(__name__)
 
@@ -16,7 +21,26 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True  # so display names resolve for everyone, not just cached members
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+class WordleBot(commands.Bot):
+    """Owns the HTTP session used to look up answer words."""
+
+    http_session: aiohttp.ClientSession | None = None
+
+    async def setup_hook(self):
+        self.http_session = aiohttp.ClientSession()
+
+    async def close(self):
+        if self.http_session:
+            await self.http_session.close()
+        await super().close()
+
+    async def fetch_answer(self, d):
+        return await make_fetcher(self.http_session)(d)
+
+
+bot = WordleBot(command_prefix="!", intents=intents)
 conn = None  # opened in main() so importing this module has no side effects
 
 
@@ -106,6 +130,50 @@ async def leaderboard_cmd(ctx: commands.Context):
     rows = leaderboard(guild_results(conn, ctx.guild.id), latest_wordle_no(conn, ctx.guild.id))
     named = [(display_name(ctx.guild, r.user_id), r.stats) for r in rows]
     await ctx.send(embed=leaderboard_embed(named))
+
+
+@bot.command(name="history")
+async def history_cmd(ctx: commands.Context, member: discord.User = None):
+    target = member or ctx.author
+    name = user_label(ctx.guild, target)
+    latest = latest_wordle_no(conn, ctx.guild.id)
+    rows = history_rows(user_results(conn, ctx.guild.id, target.id), summary_days(conn, ctx.guild.id))
+    pages = page_count(len(rows), config.HISTORY_PAGE_SIZE)
+
+    async def render(page: int) -> discord.Embed:
+        shown = paginate(rows, page, config.HISTORY_PAGE_SIZE)
+        words = await get_answers(conn, [r.wordle_no for r in shown], latest, bot.fetch_answer)
+        return history_embed(name, shown, words, page, pages)
+
+    async with ctx.typing():
+        embed = await render(0)
+    if pages == 1:
+        await ctx.send(embed=embed)
+        return
+    view = HistoryView(ctx.author.id, pages, render)
+    view.message = await ctx.send(embed=embed, view=view)
+
+
+@bot.command(name="day")
+async def day_cmd(ctx: commands.Context, *, arg: str = None):
+    wordle_no = parse_day(arg, today_et())
+    if wordle_no is None:
+        await ctx.send(DAY_HELP)
+        return
+    latest = latest_wordle_no(conn, ctx.guild.id)
+    if latest is None or wordle_no > latest:
+        await ctx.send("That day's results haven't posted yet.")
+        return
+
+    async def render(n: int) -> discord.Embed:
+        word = (await get_answers(conn, [n], latest, bot.fetch_answer))[n]
+        entries = [(display_name(ctx.guild, uid), r) for uid, r in day_results(conn, ctx.guild.id, n)]
+        return day_embed(n, word, entries)
+
+    async with ctx.typing():
+        embed = await render(wordle_no)
+    view = DayView(ctx.author.id, wordle_no, latest, render)
+    view.message = await ctx.send(embed=embed, view=view)
 
 
 @bot.command(name="rescan")
