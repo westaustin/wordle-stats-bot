@@ -53,3 +53,9 @@ def test_backfill_complete_marker(conn):
     mark_backfill_complete(conn, G)
     assert backfill_complete(conn, G)
     assert not backfill_complete(conn, 2)
+
+
+def test_answer_cache_roundtrip(conn):
+    from wordle_bot.db import cached_answers, store_answer
+    store_answer(conn, 1936, "PROVE")
+    assert cached_answers(conn, [1936, 1937]) == {1936: "PROVE"}

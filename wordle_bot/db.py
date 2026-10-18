@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS results (
     message_id INTEGER NOT NULL,
     PRIMARY KEY (guild_id, wordle_no, user_id)
 );
+CREATE TABLE IF NOT EXISTS answers (
+    wordle_no INTEGER PRIMARY KEY,
+    word      TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS backfill_state (
     guild_id INTEGER PRIMARY KEY  -- present = a full history pass finished cleanly
 );
@@ -98,3 +102,15 @@ def backfill_complete(conn, guild_id: int) -> bool:
     return conn.execute(
         "SELECT 1 FROM backfill_state WHERE guild_id = ?", (guild_id,)
     ).fetchone() is not None
+
+
+def cached_answers(conn, nos: list[int]) -> dict[int, str]:
+    if not nos:
+        return {}
+    marks = ",".join("?" * len(nos))
+    return dict(conn.execute(f"SELECT wordle_no, word FROM answers WHERE wordle_no IN ({marks})", nos))
+
+
+def store_answer(conn, wordle_no: int, word: str) -> None:
+    conn.execute("INSERT OR REPLACE INTO answers VALUES (?, ?)", (wordle_no, word))
+    conn.commit()
