@@ -78,3 +78,9 @@ def has_any(conn, guild_id: int) -> bool:
     return conn.execute(
         "SELECT 1 FROM results WHERE guild_id = ? LIMIT 1", (guild_id,)
     ).fetchone() is not None
+
+
+def latest_message_id(conn, guild_id: int) -> int | None:
+    return conn.execute(
+        "SELECT MAX(message_id) FROM results WHERE guild_id = ?", (guild_id,)
+    ).fetchone()[0]

@@ -36,3 +36,11 @@ def test_guild_results(conn, summary_lines):
     by_user = guild_results(conn, G)
     assert set(by_user) == {111, 222, 333, 444}
     assert by_user[333] == [Result(1942, 6, False)]
+
+
+def test_latest_message_id(conn, summary_lines):
+    from wordle_bot.db import latest_message_id
+    assert latest_message_id(conn, G) is None
+    upsert_results(conn, G, 1940, summary_lines, channel_id=10, message_id=500)
+    upsert_results(conn, G, 1941, summary_lines, channel_id=10, message_id=900)
+    assert latest_message_id(conn, G) == 900

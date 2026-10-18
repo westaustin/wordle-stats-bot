@@ -1,0 +1,16 @@
+[Unit]
+Description=Wordle stats Discord bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Adjust paths and user to match your server
+User=wordle
+WorkingDirectory=/opt/wordle-bot
+EnvironmentFile=/opt/wordle-bot/.env
+ExecStart=/opt/wordle-bot/.venv/bin/python -m wordle_bot
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
